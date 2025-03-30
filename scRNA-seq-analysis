@@ -1,0 +1,368 @@
+library(Seurat)
+library(tidyverse)
+library(dplyr)
+library(patchwork)
+library(mclust)
+library(harmony)
+library(multtest)
+library(metap)
+library(ggplot2)
+library(corrplot)
+library(cowplot)
+library(pheatmap)
+library(ComplexHeatmap)
+library(circlize)
+library(RColorBrewer)
+
+process_sample <- function(sample_name, data_path,min_cells = 3,nFeature_min = 500, nFeature_max = 7000,
+                           nCount_max = 40000,percent_mt_max = 0.05,mt_pattern = "^MT-") {
+  data <- Read10X(data.dir = data_path)
+  seurat_obj <- CreateSeuratObject(counts = data, min.cells = min_cells, project = sample_name)
+  seurat_obj@meta.data$orig.ident <- sample_name
+  seurat_obj[["percent.mt"]] <- PercentageFeatureSet(seurat_obj, pattern = mt_pattern)
+  VlnPlot(seurat_obj, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+ 
+  seurat_obj <- subset(seurat_obj, subset = nFeature_RNA > nFeature_min & nFeature_RNA < nFeature_max
+                       & nCount_RNA < nCount_max & percent.mt < percent_mt_max) # set values accroding to VlinPlot
+                       return(seurat_obj)}
+samples <- list(TAW_ciTotiSCs    = "Path/TAW_ciTotiSCs",TAWa_ciTotiSCs   = "Path/TAWa_ciTotiSCs",
+  ciToti4 = "Path/ciToti4",ciToti7 = "Path/ciToti7",ciToti8 = "Path/ciToti8",ciToti10 = "Path/ciToti10",
+  ciToti12_H = "Path/ciToti12_H",E3.5_in_utero = "Path/E3.5_in_utero",E6.5_in_utero = "Path/E6.5_in_utero",
+  E7.5_in_utero = "Path/E7.5_in_utero",E8.5_in_utero = "Path/E8.5_in_utero",E10.5_H_in_utero = "Path/E10.5_H_in_utero",
+  E4.5_ex_utero = "Path/E4.5_ex_utero",E6.5_ex_utero = "Path/E6.5_ex_utero",E7.5_ex_utero = "Path/E7.5_ex_utero")
+processed_samples <- lapply(names(samples), function(sample_name) {
+  process_sample(sample_name, samples[[sample_name]])
+})
+names(processed_samples) <- names(samples)
+list2env(processed_samples, .GlobalEnv)
+
+
+#Fig. 2k
+combined1 <- merge(ciToti4, y = c(E3.5_in_utero,E4.5_ex_utero))
+combined1 <- NormalizeData(combined1) %>% FindVariableFeatures() %>% ScaleData() %>% RunPCA(verbose=FALSE)
+system.time({combined1 <- RunHarmony(combined1, group.by.vars = "orig.ident")})
+combined1 <- FindNeighbors(combined1, reduction = "harmony", dims = 1:10) %>% FindClusters(resolution = 0.05)
+combined1 <- RunUMAP(combined1, reduction = "harmony", dims = 1:10)
+DimPlot(combined1, reduction = "umap", label = F,split.by = "orig.ident",pt.size = 0.25) + scale_color_manual(values = c("Intermedia" = "gray", "TE" = "#7b1fa2", "Epi" = "gold", "PrE" = "steelblue"))
+
+#Fig. 2l
+combined1$sample_cluster <- paste(Idents(combined1), combined1$orig.ident, sep = "_")
+Idents(combined1) <- "sample_cluster"
+cluster_levels <- c("TE", "PrE", "Epi", "Intermedia")
+combined1$sample_cluster <- factor(combined1$sample_cluster, levels = unlist(lapply(cluster_levels, function(cluster) {
+  grep(paste0("^", cluster), levels(Idents(combined1)), value = TRUE)
+})))
+Idents(combined1) <- "sample_cluster"
+DotPlot(combined1, 
+        features = c("Krt8", "Krt18","Tfap2c", "Gata2", "Dab2","Sox17", "Gata4", "Pdgfra", "Pou5f1", "Sox2", "Klf2", "Nanog")) +
+  scale_colour_gradientn(colors = c("steelblue", "white", "darkred")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(color = guide_colourbar(title = "Expression"))
+
+#Fig. 3k
+combined2 <- merge(ciToti7, y = c(ciToti8,E6.5_in_utero,E6.5_ex_utero,E7.5_in_utero,E8.5_ex_utero))
+combined2 <- NormalizeData(combined2) %>% FindVariableFeatures() %>% ScaleData() %>% RunPCA(verbose=FALSE)
+system.time({combined2 <- RunHarmony(combined2, group.by.vars = "orig.ident")})
+combined2 <- FindNeighbors(combined2, reduction = "harmony", dims = 1:20) %>% FindClusters(resolution = 0.5)
+combined2 <- RunUMAP(combined2, reduction = "harmony", dims = 1:20)
+combined2 <- RenameIdents(combined2, "0" = "Mesenchyme","1"="Epiblast","2"="Epiblast","3"="Visceral endo",
+                          "4"="Nascent meso","5"="Intermedia","6"="Neuroectodermal progenitors","7"="ExE ecto",
+                          "8"="Parietal endo","9"="ExE endo","10"="Trophoblast","11"="EPC","12"="Aminion",
+                          "13"="Haematoendothelial progenitors","14"="ExE endo","15"="PS","16"="Definitive endo",
+                          "17"="Definitive endo","18"="ExE ecto","19"="ExE endo","20"="Intermedia","21"="Intermedia")
+DimPlot(ciToti_E_IVE_7_8_Joint_clustermax, reduction = "umap", label = F,split.by = "group",pt.size = 0.25) +
+  scale_color_manual(values = c("Mesenchyme" = "mediumvioletred","Neuroectodermal progenitors" = "lightblue","Visceral endo" = "#e6b0aa",                   
+    "Nascent meso" = "lightslategray","Intermedia" = "#1565c0","ExE ecto" = "#7b1fa2","Parietal endo" = "#ec407a","ExE endo" = "#880e4f",
+    "Trophoblast" = "darkorange","EPC" = "orchid","Aminion" = "#ca6f1e","Haematoendothelial progenitors" = "forestgreen","PS" = "cadetblue",
+    "Definitive endo" = "#ec7063","Epiblast"= "darkseagreen")) 
+
+#Fig. 3l
+combined2 <- JoinLayers(combined2, layers = c("counts", "data"))
+avg_expression <- AverageExpression(ciToti_E_IVE_7_8_Joint_clustermax,group.by = "orig.ident",features = c("Taldo1", "Mrpl24", "Mrpl44", 
+                                    "Ruvbl2", "Mrto4", "Unc93b1", "Dohh", "Fcf1", "Ube2l3", "Mrpl42", "Col1a1", "Dnajb13", "Fli1", "Noto",
+                                    "Cfap44", "Hoxd9", "Pkd1l1", "Unc5c", "Nkx6-1", "Gdf6"))
+avg_expr_matrix <- avg_expression$RNA
+pheatmap(avg_expr_matrix,name = "correlation",col = colorRamp2(c(-2, 0, 2), c("steelblue", "white", "darkred")),
+         cluster_rows = F,cluster_columns = F,show_row_names = TRUE,show_column_names = TRUE)
+combined2$sample_cluster <- paste(Idents(combined2), combined2$orig.ident, sep = "_")
+Idents(combined2) <- "sample_cluster"
+DotPlot(combined2[,ciToti_E_IVE_7_8_Joint_clustermax@meta.data$seurat_clusters %in% c(1,2)],
+        features = c("Tbx3", "Fbxo15", "Esrrb", "Zfp42","Nanog",  "Fgf5", "Eomes","Pou3f1","Sox2", "T")) +
+        scale_colour_gradientn(colors = c("steelblue", "white", "darkred"),limits = c(-2.5, 2.5)) +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) + guides(color = guide_colourbar(title = "Expression"))
+
+#Fig. 4c
+Combined3 <- merge(E8.5_in_utero, y=c(ciToti10))
+Combined3 <- NormalizeData(Combined3) %>% FindVariableFeatures() %>% ScaleData() %>% RunPCA(verbose=FALSE)
+system.time({Combined3 <- RunHarmony(Combined3, group.by.vars = "orig.ident")})
+Combined3 <- FindNeighbors(Combined3, reduction = "harmony", dims = 1:20) %>% FindClusters(resolution = 0.5)
+Combined3 <- RunUMAP(Combined3, reduction = "harmony", dims = 1:20)
+Em_subset = Combined3[,Combined3@meta.data$seurat_clusters %in% c(2,6,18,24)]
+Em_subset <- FindNeighbors(Em_subset, reduction = "integrated.cca", dims = 1:15) %>% FindClusters(resolution = 0.05)
+Em_subset <- RunUMAP(Em_subset, reduction = "integrated.cca", dims = 1:15)
+Em_subset <- RenameIdents(Em_subset, "1" = "Somites","0"="Neuroectoderm","2"="MidHindGut","3"="Notochord")
+DimPlot(Em,reduction = "umap",label = F,label.size = 4, split.by = "orig.ident") +
+  scale_color_manual(values = c("MidHindGut" =  "forestgreen","Neuroectoderm" = "#7b1fa2","Somites" = "darkgoldenrod","Notochord" =  "#1565c0")) 
+
+#Fig. 4d
+Em_subset$sample_cluster <- paste(Idents(Em_subset), Em$orig.ident, sep = "_")
+Idents(Em_subset) <- "sample_cluster"
+cluster_levels <- c("Somites","MidHindGut","Neuroectoderm","Notochord")
+Em_subset$sample_cluster <- factor(Em_subset$sample_cluster, levels = unlist(lapply(cluster_levels, function(cluster) {
+  grep(paste0("^", cluster), levels(Idents(Em_subset)), value = TRUE)})))
+Idents(Em_subset) <- "sample_cluster"
+DotPlot(Em_subset,features = c("Meox1","Tcf15","Snai1","Foxc2","Apoa1","Cdh6","Sox17","Gata4","Sox2","Otx2","Adgrv1","Sox1","Pax3",
+      "T","Shh","Sox9","Foxa2","Noto","Chrd")) +scale_colour_gradientn(colors = c("#006695", "white", "#950000")) +
+       theme(axis.text.x = element_text(angle = 45, hjust = 1)) + guides(color = guide_colourbar(title = "Expression"))
+
+#Fig. 4e
+common_genes <- Reduce(intersect, list(rownames(ciToti4_subset), rownames(ciToti7_subset), rownames(ciToti8_subset), rownames(ciToti10_subset)))
+ciToti4_common <- ciToti4_subset[common_genes, ]
+ciToti7_common <- ciToti7_subset[common_genes, ]
+ciToti8_common <- ciToti8_subset[common_genes, ]
+ciToti10_common <- ciToti10_subset[common_genes, ]
+combined4 <- merge(ciToti4_common, y = c(ciToti7_common,ciToti8_common,ciToti10_common))
+DimPlot(combined4, reduction = "umap", split.by = "orig.ident", label = F) +
+  scale_color_manual(values = c("PrE" = "mediumvioletred","Intermedia" = "gray", "Epiblast" = "steelblue","Polar TE" = "#993399",                   
+    "Mural TE" = "#996699","PS" = "#1565c0","Em VE" = "orchid","ExE ecto" = "#ec407a","ExE VE" = "#7b1fa2","PGCs" = "gold",
+    "Parietal endo" = "#d1c4e9","Aminion" = "#ca6f1e","Neuromesodermal progenitors" = "forestgreen","Mesenchyme" = "cadetblue",             
+    "Visceral endo" = "#880e4f", "Mixed" = "slategray","Haematoendothelial progenitors" = "darkorange","Gut progenitors" = "darkgoldenrod",             
+    "Neuroectoderm" = "cornflowerblue","Allantois" = "navajowhite","Epithelium" = "#9ccc65","Somites" = "mediumaquamarine",                 
+    "ExE endo" = "#e6b0aa","Erythroblast" = "#DC143C","Vascular endothelium" = "orangered","Surface ecto" = "darkseagreen",              
+    "Primitive erythroid cells" = "#ec7063","Cardiacmyocyte" = "royalblue","Endothelium" = "#808000",
+    "Cardiac meso" = "lightslategray","Notochord" = "lightgreen")) 
+
+#Fig. 4f
+cell_proportions <- prop.table(table(Idents(combined4), combined4$orig.ident), margin = 2)
+
+#Fig. 4g
+combined5 <- merge(E85_in_utero, y = c(ciToti10, ETiX8, Hanna_D8))
+combined5 <- NormalizeData(combined5) %>% FindVariableFeatures() %>% ScaleData() %>% RunPCA(verbose=FALSE)
+system.time({combined5 <- RunHarmony(combined5, group.by.vars = "orig.ident")})
+combined5 <- FindNeighbors(combined5, reduction = "harmony", dims = 1:20) %>% FindClusters(resolution = 0.5)
+combined5 <- RunUMAP(combined5, reduction = "harmony", dims = 1:20)
+expr_matrix_A <- GetAssayData(E8.5_in_utero, assay = "RNA", layer = "counts")
+expr_matrix_B <- GetAssayData(ciToti10, assay = "RNA", layer = "counts")
+expr_matrix_C <- GetAssayData(ETiX8, assay = "RNA", layer = "counts")
+expr_matrix_D <- GetAssayData(Hanna_D8, assay = "RNA", layer = "counts")
+avg_expr_A <- rowMeans(expr_matrix_A)
+avg_expr_B <- rowMeans(expr_matrix_B)
+avg_expr_C <- rowMeans(expr_matrix_C)
+avg_expr_D <- rowMeans(expr_matrix_D)
+common_genes <- Reduce(intersect, list(names(avg_expr_A), names(avg_expr_B), names(avg_expr_C), names(avg_expr_D)))
+avg_expr_A_subset <- avg_expr_A[common_genes]
+avg_expr_B_subset <- avg_expr_B[common_genes]
+avg_expr_C_subset <- avg_expr_C[common_genes]
+avg_expr_D_subset <- avg_expr_D[common_genes]
+avg_expr_all <- data.frame(E8.5_in_utero = avg_expr_A_subset, ciToti10 = avg_expr_B_subset, ETiX8 = avg_expr_C_subset, Hanna_D8 = avg_expr_D_subset)
+avg_expr_all <- na.omit(avg_expr_all)
+correlation_matrix <- cor(avg_expr_all1, method = "pearson")
+color_palette <- colorRampPalette(c("SteelBlue", "white", "DarkRed"))(100)
+breaks <- seq(-1, 1, length.out = length(color_palette) + 1)
+pheatmap(correlation_matrix, 
+         color = color_palette,
+         breaks = breaks,
+         border_color = "white",
+         clustering_method = "complete",
+         display_numbers = F,
+         number_color = "black",
+         fontsize = 10,
+         fontsize_row = 10,
+         fontsize_col = 10,
+         legend = TRUE,
+         legend_breaks = seq(-1, 1, by = 1),
+         legend_labels = seq(-1, 1, by = 1),
+         main = "Pearson Correlation Heatmap",
+         cellwidth = 15,
+         cellheight = 15,
+         cluster_rows = FALSE,
+         cluster_cols = FALSE)
+
+#Fig. 4h,i
+B <- subset(combined5, subset = seurat_clusters %in% c("6","18","19"))
+H <- subset(combined5, subset = seurat_clusters %in% c("12","13"))
+B$sample_cluster <- paste(Idents(B), B$orig.ident, sep = "_")
+H$sample_cluster <- paste(Idents(H), H$orig.ident, sep = "_")
+Idents(B) <- "sample_cluster"
+Idents(H) <- "sample_cluster"
+DotPlot(B,features = c("Klf1", "Zfpm1", "Gata1", "Ank1","Hbb-y", "Hbb-bh1","Gypa","Smim1")) +
+  scale_colour_gradientn(colors = c("steelblue", "white", "darkred"),limits = c(-2.5, 2.5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  guides(color = guide_colourbar(title = "Expression"))
+DotPlot(H,features = c("Isl1", "Nkx2-5", "Tnni3", "Eno3", "Myl4","Myl7", "Tnnt2", "Tnni1")) +
+  scale_colour_gradientn(colors = c("steelblue", "white", "darkred"),limits = c(-2.5, 2.5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  guides(color = guide_colourbar(title = "Expression"))
+
+#Fig.5c
+Blood = NS_harmony7[,NS_harmony7@meta.data$seurat_clusters %in% c(10,11,14,23)]
+Idents(Blood) <- "seurat_clusters"
+Blood <- NormalizeData(Blood) %>% FindVariableFeatures() %>% ScaleData() %>% RunPCA(verbose=FALSE)
+system.time({Blood <- RunHarmony(Blood, group.by.vars = "orig.ident")})
+Blood <- FindNeighbors(Blood, reduction = "harmony", dims = 1:25) %>% FindClusters(resolution = 0.1)
+Blood <- RunUMAP(Blood, reduction = "harmony", dims = 1:25)
+Blood <- RenameIdents(Blood, "0" = "Erythroblasts", "1" = "Vascular Endothelia", "2" = "Erythroblasts", "3" = "Macrophage", 
+                      "4" = "HEP", "5" = "Epithelia")
+DimPlot(Blood, reduction = "umap",label = F, repel = TRUE, pt.size = 1) +
+        scale_color_manual(values = c("Erythroblasts" = "Salmon", "Vascular Endothelia" = "#457cba", "Macrophage" = "#DC143C",                   
+        "HEP" = "#a2c3e9","Epithelia" = "#14a61a")) 
+
+#Fig.5d
+Blood$group <- Blood$orig.ident
+Blood$seurat_clusters <- Idents(Blood)
+table1 <- table(Blood$seurat_clusters, Blood$group)
+prop_table <- prop.table(table1, margin = 2)
+cor_matrix <- as.data.frame.matrix(prop_table)
+correlation <- cor(cor_matrix)
+breaks <- seq(-1, 1, length.out = 51)
+pheatmap(correlation, color = colorRampPalette(c("#006695", "white", "#950000"))(50), border_color = NA, clustering_method = "complete", display_numbers = F,
+         main = "Pearson Correlation Heatmap", fontsize = 20, fontsize_row = 30, fontsize_col = 30, legend = TRUE,breaks = breaks)
+
+#Fig.5e
+cell_types <- c("Erythroblasts", "Vascular Endothelia", "Macrophage", "HEP", "Epithelia")
+var_names  <- c("n0.markers", "n1.markers", "n2.markers", "n4.markers", "n5.markers")
+markers_list <- list()
+for (i in seq_along(cell_types)) {
+  markers_list[[ var_names[i] ]] <- FindConservedMarkers(Blood,
+                                                         ident.1 = cell_types[i],
+                                                         grouping.var = "orig.ident",
+                                                         verbose = FALSE,
+                                                         only.pos = TRUE,
+                                                         min.diff.pct = 0.25,
+                                                         min.pct = 0.25,
+                                                         logfc.threshold = 0.25)
+}
+list2env(markers_list, envir = .GlobalEnv)
+get_top_genes <- function(marker_df, top_n = 10) {if (nrow(marker_df) == 0) {warning("Marker dataframe is empty.")return(NULL)}
+                        logfc_cols <- grep("avg_log2FC", colnames(marker_df), value = TRUE)
+                        if (length(logfc_cols) == 0) {stop("cannot find'avg_log2FC'")}  
+                        marker_df$mean_avg_log2FC <- rowMeans(marker_df[, logfc_cols], na.rm = TRUE)
+                        sorted_markers <- marker_df[order(-marker_df$mean_avg_log2FC), ]
+                        top_genes <- head(rownames(sorted_markers), top_n)
+                        return(top_genes)}
+top_genes_n0 <- get_top_genes(n0.markers, top_n = 10)
+top_genes_n1 <- get_top_genes(n1.markers, top_n = 10)
+top_genes_n2 <- get_top_genes(n2.markers, top_n = 10)
+top_genes_n3 <- get_top_genes(n3.markers, top_n = 10)
+top_genes_n4 <- get_top_genes(n4.markers, top_n = 10)
+top_genes_n5 <- get_top_genes(n5.markers, top_n = 10)
+all_top_genes <- c(top_genes_n0, top_genes_n1, top_genes_n2, top_genes_n3, top_genes_n4, top_genes_n5)
+unique_top_genes <- unique(all_top_genes)
+genes_present <- unique_top_genes[unique_top_genes %in% rownames(Blood)]
+genes_missing <- unique_top_genes[!unique_top_genes %in% rownames(Blood)]
+if (length(genes_missing) > 0) {warning(paste("genes not found in seurat object：", paste(genes_missing, collapse = ", ")))}
+expression_matrix <- GetAssayData(Blood, assay = "RNA", layer = "data")[genes_present, ]
+expression_matrix <- as.matrix(expression_matrix)
+expression_matrix_scaled <- t(scale(t(expression_matrix)))
+expression_matrix_scaled[is.na(expression_matrix_scaled)] <- 0
+annotation_col <- data.frame(
+  Sample = Blood@meta.data$orig.ident,
+  Cluster = Idents(Blood)
+)
+rownames(annotation_col) <- colnames(expression_matrix_scaled)
+annotation_col$Cluster <- factor(annotation_col$Cluster, 
+                                 levels = c("Erythroblasts", "Vascular Endothelia", "Macrophage", 
+                                            "HEP", "Epithelia"))
+annotation_col$Sample <- factor(annotation_col$Sample, levels = c("E8.5", "ciToti10"))
+new_col_order <- order(annotation_col$Cluster, annotation_col$Sample)
+expression_matrix_ordered <- expression_matrix_scaled[, new_col_order]
+annotation_col_ordered <- annotation_col[new_col_order, ]
+my_breaks <- seq(-1,1, length.out = 101) 
+my_colors <- colorRampPalette(c("navy", "white", "firebrick3"))(100)
+cluster_colors <- c("Erythroblasts" = "Salmon","Vascular Endothelia" = "#457cba", "Macrophage" = "#DC143C", "HEP" = "#a2c3e9", "Epithelia" = "#14a61a")
+sample_colors <- c("E8.5" = "#40B5AD","ciToti10" = "#DC143C")
+annotation_colors <- list(Cluster = cluster_colors, Sample = sample_colors)
+pheatmap(expression_matrix_ordered,annotation_col = annotation_col_ordered, show_rownames = TRUE,
+  show_colnames = FALSE,cluster_rows = TRUE,cluster_cols = FALSE, fontsize_row = 6, fontsize_col = 6,
+  color = my_colors,breaks = my_breaks, scale = "none", annotation_colors = annotation_colors)
+
+#Fig.5f
+Blood$sample_cluster <- paste(Idents(Blood), Blood$orig.ident, sep = "_")
+Idents(Blood) <- "sample_cluster"
+DotPlot(Blood, features = c("Hba-x", "Hbb-bh1", "Klf1", "Smim1","Zfpm1", "Gata1", "Ank1", 
+                            "Hba-a1", "Hbb-bs", "Epb42","Runx1","Spi1", "Laptm5","Tyrobp","Fcer1g",
+                            "Plcg2","Tspo","Cebpb", "Cd44","Lyz2")) +
+  scale_colour_gradientn(colors = c("steelblue", "white", "darkred"), limits = c(-2.5, 2.5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + guides(color = guide_colourbar(title = "Expression"))
+
+#Fig. 6g,h
+combined6 <- merge(ciToti12_H, y = c(ciToti10_H))
+combined6 <- NormalizeData(combined6) %>% FindVariableFeatures() %>% ScaleData() %>% RunPCA(verbose=FALSE)
+system.time({combined_a <- RunHarmony(combined6, group.by.vars = "orig.ident")})
+combined6 <- FindNeighbors(combined6, reduction = "harmony", dims = 1:20) %>% FindClusters(resolution = 0.2)
+combined6 <- RunUMAP(combined6, reduction = "harmony", dims = 1:20)
+combined6 <- RenameIdents(combined6, "0" = "Erythrocytes","1"="V-CMs","2"="Undefined","3"="OFT","4"="Artery-EC",
+                          "5"="Epicardium","6"="Endocardium","7"="A-CMs","8"="HSC", "9" = "CNCCs", "10" = "Erythrocytes")
+DimPlot(combined6, reduction = "umap",label = F, group.by = "orig.ident")+ 
+        scale_color_manual(values = c("ciToti12_H" = "#8A2BE2", "E10.5_H" = "lightgray")) 
+DimPlot(combined6, reduction = "umap",label = F, split.by = "orig.ident")+ 
+        scale_color_manual(values = c("V-CMs" = "forestgreen","Artery−EC" = "#FFC000",                    
+        "Epicardium" = "steelblue","CMs#1" = "#e6b0aa","CMs#2" = "lightgreen", "SAN-CMs" = "lightslategray",                   
+        "OFT" = "#1565c0","A-CMs" = "purple","HSC" = "#DC143C", "Erythrocytes" = "#FF4433")) 
+
+#Fig. 6i
+CT_without_Blood <- subset(combined6, subset = seurat_clusters %in% c("V-CMs","OFT","Artery-EC","Epicardium","Endocardium","A-CMs","CNCCs"))
+CT_without_Blood$group <- CT_without_Blood$orig.ident
+CT_without_Blood$seurat_clusters <- Idents(CT_without_Blood)
+table1 <- table(CT_without_Blood$seurat_clusters, CT_without_Blood$group)
+prop_table <- prop.table(table1, margin = 2)
+cor_matrix <- as.data.frame.matrix(prop_table)
+correlation <- cor(cor_matrix)
+breaks <- seq(-1, 1, length.out = 51)
+pheatmap(correlation,color = colorRampPalette(c("#006695", "white", "#950000"))(50),border_color = NA,clustering_method = "complete",
+         display_numbers = F,main = "Pearson Correlation Heatmap",fontsize = 20,fontsize_row = 30,fontsize_col = 30,legend = TRUE,breaks = breaks)
+
+#Fig. 6j
+genes <- c("Nkx2-5", "Cryab","Tnni1","Tnni3", "Myl3", "Myl7","Tnnt2", "Myh6",
+           "Myh7", "Cacna1c", "Ryr2", "Ttn", "Myom1",
+           "Foxa1", "Foxa2","Cldn4", "Cldn6", "Cldn7", "Epcam", "Crb3", "Spint1",
+           "Wnt4","Wnt6", "Tfap2a", "Gata3", "Tacstd2", "Tac2", "Kcnk1", "Dlx5",
+           "Dll4","Robo4", "Erg","Mfng","Cldn5", "Cdh5","Sox18", "Esam", 
+           "Wt1", "Tbx18", "Tcf21", "Aldh1a1", "Upk1b", "Upk3b", "Prkcb", "Ildr2", 
+           "Nfatc1", "Nrg1", "Tgfbr3", "Pde1c", "Trpm3", "Ednrb", "Cped1","Itga9", 
+           "Rhag","Hbb-bh1", "Hba-a2", "Hba-x", "Hbb-y", "Hba-a1", "Gypa", "Alas2",
+           "Csf1r","Ptprc","Tyrobp","Spi1",  "Fcer1g","Rac2", "Coro1a", "Laptm5")
+combined6$sample_cluster <- paste(Idents(combined6), combined6$orig.ident, sep = "_")
+Idents(combined6) <- "sample_cluster"
+P <- DotPlot(combined6,features = genes) + scale_colour_gradientn(colors = c("steelblue", "white", "darkred")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  guides(color = guide_colourbar(title = "Expression"))
+df<- P$data
+exp_mat <- df %>%
+  dplyr::select(-pct.exp, -avg.exp) %>%
+  pivot_wider(names_from = id, values_from = avg.exp.scaled) %>%
+  as.data.frame()
+row.names(exp_mat) <- exp_mat$features.plot
+exp_mat <- exp_mat[,-1] %>% as.matrix()
+percent_mat <- df %>%
+  dplyr::select(-avg.exp, -avg.exp.scaled) %>%
+  pivot_wider(names_from = id, values_from = pct.exp) %>%
+  as.data.frame()
+row.names(percent_mat) <- percent_mat$features.plot
+percent_mat <- percent_mat[,-1] %>% as.matrix()
+quantile(exp_mat, c(0.1, 0.5, 0.9, 0.99))
+col_fun = circlize::colorRamp2(c(-1, 0, 2), c("steelblue", "white", "darkred"))
+cell_fun = function(j, i, x, y, w, h, fill){
+  grid.rect(x = x, y = y, width = w, height = h,
+            gp = gpar(col = NA, fill = NA))
+  grid.circle(x=x,y=y,r= percent_mat[i, j]/100 * min(unit.c(w, h)),
+              gp = gpar(fill = col_fun(exp_mat[i, j]), col = NA))}
+cluster <- colnames(exp_mat)
+colnames(exp_mat)
+column_ha <- HeatmapAnnotation(
+  cluster = cluster,
+  na_col = "Gray")
+layer_fun = function(j, i, X, y, w, h, fill){
+  grid.rect(x = X, y = y, width = w, height = h,
+            gp = gpar(col = NA, fill = NA))
+  grid.circle(x=X, y=y,r= pindex(percent_mat, i, j)/100 * unit(2, "mm"),
+              gp = gpar(fill = col_fun(pindex(exp_mat, i, j)), col = NA))}
+lgd_list = list(Legend( labels = c(0,0.25,0.5,0.75,1), title = "pt",
+                graphics = list(function(x, y, w, h) grid.circle(x = x, y = y, r = 0 * unit(2, "mm"),gp = gpar(fill = "black")),
+                function(x, y, w, h) grid.circle(x = x, y = y, r = 0.25 * unit(2, "mm"),gp = gpar(fill = "black")),
+                function(x, y, w, h) grid.circle(x = x, y = y, r = 0.5 * unit(2, "mm"),gp = gpar(fill = "black")),
+                function(x, y, w, h) grid.circle(x = x, y = y, r = 0.75 * unit(2, "mm"),gp = gpar(fill = "black")),
+                function(x, y, w, h) grid.circle(x = x, y = y, r = 1 * unit(2, "mm"),gp = gpar(fill = "black")))))
+set.seed(230809)
+hp1 <- Heatmap(exp_mat,name = "hp",heatmap_legend_param = list(title = "expression"),
+               col = col_fun,rect_gp = gpar(type = "none"),layer_fun = layer_fun,
+               row_names_gp = gpar(fontsize = 8),row_km = 9,border = "black",
+               top_annotation = column_ha,show_column_names = FALSE,show_parent_dend_line = F)
+draw(hp1, annotation_legend_list = lgd_list)
