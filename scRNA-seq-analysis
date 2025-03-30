@@ -1,18 +1,7 @@
-library(Seurat)
-library(tidyverse)
-library(dplyr)
-library(patchwork)
-library(mclust)
-library(harmony)
-library(multtest)
-library(metap)
-library(ggplot2)
-library(corrplot)
-library(cowplot)
-library(pheatmap)
-library(ComplexHeatmap)
-library(circlize)
-library(RColorBrewer)
+packages <- c("Seurat", "tidyverse", "dplyr", "patchwork", "mclust", 
+              "harmony", "multtest", "metap", "ggplot2", "corrplot", 
+              "cowplot", "pheatmap", "ComplexHeatmap", "circlize", "RColorBrewer")
+lapply(packages, library, character.only = TRUE)
 
 process_sample <- function(sample_name, data_path,min_cells = 3,nFeature_min = 500, nFeature_max = 7000,
                            nCount_max = 40000,percent_mt_max = 0.05,mt_pattern = "^MT-") {
@@ -35,7 +24,6 @@ processed_samples <- lapply(names(samples), function(sample_name) {
 })
 names(processed_samples) <- names(samples)
 list2env(processed_samples, .GlobalEnv)
-
 
 #Fig. 2k
 combined1 <- merge(ciToti4, y = c(E3.5_in_utero,E4.5_ex_utero))
@@ -159,24 +147,11 @@ avg_expr_all <- na.omit(avg_expr_all)
 correlation_matrix <- cor(avg_expr_all1, method = "pearson")
 color_palette <- colorRampPalette(c("SteelBlue", "white", "DarkRed"))(100)
 breaks <- seq(-1, 1, length.out = length(color_palette) + 1)
-pheatmap(correlation_matrix, 
-         color = color_palette,
-         breaks = breaks,
-         border_color = "white",
-         clustering_method = "complete",
-         display_numbers = F,
-         number_color = "black",
-         fontsize = 10,
-         fontsize_row = 10,
-         fontsize_col = 10,
-         legend = TRUE,
-         legend_breaks = seq(-1, 1, by = 1),
-         legend_labels = seq(-1, 1, by = 1),
-         main = "Pearson Correlation Heatmap",
-         cellwidth = 15,
-         cellheight = 15,
-         cluster_rows = FALSE,
-         cluster_cols = FALSE)
+pheatmap(correlation_matrix,color = color_palette,breaks = breaks,border_color = "white",
+         clustering_method = "complete",display_numbers = F,number_color = "black",
+         fontsize = 10,fontsize_row = 10,fontsize_col = 10,legend = TRUE,legend_breaks = seq(-1, 1, by = 1),
+         legend_labels = seq(-1, 1, by = 1),main = "Pearson Correlation Heatmap",
+         cellwidth = 15,cellheight = 15,cluster_rows = FALSE,cluster_cols = FALSE)
 
 #Fig. 4h,i
 B <- subset(combined5, subset = seurat_clusters %in% c("6","18","19"))
