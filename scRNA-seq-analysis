@@ -14,7 +14,7 @@ process_sample <- function(sample_name, data_path,min_cells = 3,nFeature_min = 5
   seurat_obj <- subset(seurat_obj, subset = nFeature_RNA > nFeature_min & nFeature_RNA < nFeature_max
                        & nCount_RNA < nCount_max & percent.mt < percent_mt_max) # set values accroding to VlinPlot
                        return(seurat_obj)}
-samples <- list(TAW_ciTotiSCs    = "Path/TAW_ciTotiSCs",TAWa_ciTotiSCs   = "Path/TAWa_ciTotiSCs",
+samples <- list(TAW_ciTotiSCs = "Path/TAW_ciTotiSCs",TAWa_ciTotiSCs = "Path/TAWa_ciTotiSCs",
   ciToti4 = "Path/ciToti4",ciToti7 = "Path/ciToti7",ciToti8 = "Path/ciToti8",ciToti10 = "Path/ciToti10",
   ciToti12_H = "Path/ciToti12_H",E3.5_in_utero = "Path/E3.5_in_utero",E6.5_in_utero = "Path/E6.5_in_utero",
   E7.5_in_utero = "Path/E7.5_in_utero",E8.5_in_utero = "Path/E8.5_in_utero",E10.5_H_in_utero = "Path/E10.5_H_in_utero",
@@ -58,7 +58,7 @@ combined2 <- RenameIdents(combined2, "0" = "Mesenchyme","1"="Epiblast","2"="Epib
                           "8"="Parietal endo","9"="ExE endo","10"="Trophoblast","11"="EPC","12"="Aminion",
                           "13"="Haematoendothelial progenitors","14"="ExE endo","15"="PS","16"="Definitive endo",
                           "17"="Definitive endo","18"="ExE ecto","19"="ExE endo","20"="Intermedia","21"="Intermedia")
-DimPlot(ciToti_E_IVE_7_8_Joint_clustermax, reduction = "umap", label = F,split.by = "group",pt.size = 0.25) +
+DimPlot(combined2, reduction = "umap", label = F,split.by = "group",pt.size = 0.25) +
   scale_color_manual(values = c("Mesenchyme" = "mediumvioletred","Neuroectodermal progenitors" = "lightblue","Visceral endo" = "#e6b0aa",                   
     "Nascent meso" = "lightslategray","Intermedia" = "#1565c0","ExE ecto" = "#7b1fa2","Parietal endo" = "#ec407a","ExE endo" = "#880e4f",
     "Trophoblast" = "darkorange","EPC" = "orchid","Aminion" = "#ca6f1e","Haematoendothelial progenitors" = "forestgreen","PS" = "cadetblue",
@@ -66,7 +66,7 @@ DimPlot(ciToti_E_IVE_7_8_Joint_clustermax, reduction = "umap", label = F,split.b
 
 #Fig. 3l
 combined2 <- JoinLayers(combined2, layers = c("counts", "data"))
-avg_expression <- AverageExpression(ciToti_E_IVE_7_8_Joint_clustermax,group.by = "orig.ident",features = c("Taldo1", "Mrpl24", "Mrpl44", 
+avg_expression <- AverageExpression(combined2,group.by = "orig.ident",features = c("Taldo1", "Mrpl24", "Mrpl44", 
                                     "Ruvbl2", "Mrto4", "Unc93b1", "Dohh", "Fcf1", "Ube2l3", "Mrpl42", "Col1a1", "Dnajb13", "Fli1", "Noto",
                                     "Cfap44", "Hoxd9", "Pkd1l1", "Unc5c", "Nkx6-1", "Gdf6"))
 avg_expr_matrix <- avg_expression$RNA
