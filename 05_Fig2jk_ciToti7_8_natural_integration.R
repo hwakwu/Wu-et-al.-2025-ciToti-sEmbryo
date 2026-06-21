@@ -1,0 +1,118 @@
+#!/usr/bin/env Rscript
+
+# Fig. 2j,k: Harmony integration of ciToti7/8 EMs with natural in-utero and ex-utero embryos.
+# Outputs include UMAP split by group, average-expression heatmap, and epiblast-state dot plot.
+
+source('R/utils_common.R')
+source('R/celltype_annotations.R')
+require_packages(c('Seurat', 'dplyr', 'tidyr', 'ggplot2', 'patchwork', 'harmony', 'pheatmap'))
+
+args <- parse_cli_args(list(
+  ciToti7 = 'data/ciToti7.rds',
+  ciToti8 = 'data/ciToti8.rds',
+  E65_in_utero = 'data/E6.5_in_utero.rds',
+  E65_ex_utero = 'data/E6.5_ex_utero.rds',
+  E75_in_utero = 'data/E7.5_in_utero.rds',
+  E75_ex_utero = 'data/E7.5_ex_utero.rds',
+  outdir = 'results/Fig2jk',
+  dims = '1:20',
+  resolution = '0.5',
+  assay = 'RNA',
+  epiblast_clusters = '1,2'
+))
+ensure_dir(args$outdir)
+
+parse_dims <- function(x) {
+  if (grepl(':', x, fixed = TRUE)) {
+    parts <- as.integer(strsplit(x, ':', fixed = TRUE)[[1]])
+    seq(parts[1], parts[2])
+  } else {
+    as.integer(arg_vec(x))
+  }
+}
+dims <- parse_dims(args$dims)
+
+message_section('Loading objects for Fig. 2j,k integration')
+ciToti7 <- load_seurat_rds(args$ciToti7, project = 'ciToti7') |> set_orig_ident('ciToti7')
+ciToti8 <- load_seurat_rds(args$ciToti8, project = 'ciToti8') |> set_orig_ident('ciToti8')
+E65_in <- load_seurat_rds(args$E65_in_utero, project = 'E6.5_in_utero') |> set_orig_ident('E6.5_in_utero')
+E65_ex <- load_seurat_rds(args$E65_ex_utero, project = 'E6.5_ex_utero') |> set_orig_ident('E6.5_ex_utero')
+E75_in <- load_seurat_rds(args$E75_in_utero, project = 'E7.5_in_utero') |> set_orig_ident('E7.5_in_utero')
+E75_ex <- load_seurat_rds(args$E75_ex_utero, project = 'E7.5_ex_utero') |> set_orig_ident('E7.5_ex_utero')
+
+combined2 <- merge(
+  ciToti7,
+  y = list(ciToti8, E65_in, E65_ex, E75_in, E75_ex),
+  add.cell.ids = c('ciToti7', 'ciToti8', 'E65_in', 'E65_ex', 'E75_in', 'E75_ex'),
+  project = 'Fig2_ciToti7_8_natural'
+)
+combined2$group <- dplyr::case_when(
+  combined2$orig.ident %in% c('ciToti7', 'ciToti8') ~ 'ciToti7-ciToti8 EMs',
+  combined2$orig.ident %in% c('E6.5_in_utero', 'E7.5_in_utero') ~ 'in utero E6.5-E7.5 NEs',
+  combined2$orig.ident %in% c('E6.5_ex_utero', 'E7.5_ex_utero') ~ 'ex utero E6.5-E7.5 NEs',
+  TRUE ~ as.character(combined2$orig.ident)
+)
+combined2$group <- factor(combined2$group, levels = c('ciToti7-ciToti8 EMs', 'in utero E6.5-E7.5 NEs', 'ex utero E6.5-E7.5 NEs'))
+
+message_section('Running NormalizeData/FindVariableFeatures/ScaleData/PCA/Harmony/UMAP')
+combined2 <- run_harmony_pipeline(
+  combined2,
+  group.by.vars = 'orig.ident',
+  dims = dims,
+  resolution = as.numeric(args$resolution),
+  assay = args$assay
+)
+combined2$pre_annotation_cluster <- as.character(combined2$seurat_clusters)
+combined2 <- assign_celltype_from_cluster_map(combined2, fig2_integrated_cluster_map, cluster_col = 'seurat_clusters', celltype_col = 'celltype')
+Idents(combined2) <- 'celltype'
+
+message_section('Saving Fig. 2j UMAP')
+save_dimplot(
+  combined2,
+  out_pdf = file.path(args$outdir, 'Fig2j_integrated_UMAP_split_by_group.pdf'),
+  split.by = 'group',
+  colors = fig2_colors,
+  pt.size = 0.25,
+  width = 11,
+  height = 4
+)
+export_umap_source(combined2, file.path(args$outdir, 'Fig2j_integrated_UMAP_source_data.csv'), celltype_col = 'celltype')
+
+message_section('Saving Fig. 2k average-expression heatmap')
+save_average_expression_heatmap(
+  combined2,
+  features = fig2k_average_genes,
+  group.by = 'orig.ident',
+  out_pdf = file.path(args$outdir, 'Fig2k_average_expression_heatmap.pdf'),
+  out_csv = file.path(args$outdir, 'Fig2k_average_expression_matrix.csv'),
+  assay = args$assay,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  width = 5.5,
+  height = 6
+)
+
+message_section('Saving Fig. 2k epiblast-state marker dot plot')
+epiblast_clusters <- arg_vec(args$epiblast_clusters)
+if (length(epiblast_clusters) > 0) {
+  cells_epi <- rownames(combined2[[]])[combined2$pre_annotation_cluster %in% epiblast_clusters]
+  epi_obj <- subset(combined2, cells = cells_epi)
+} else {
+  epi_obj <- subset(combined2, idents = 'Epiblast')
+}
+epi_obj <- add_sample_cluster(epi_obj, sample_col = 'orig.ident', output_col = 'sample_cluster')
+Idents(epi_obj) <- 'sample_cluster'
+
+save_dotplot(
+  epi_obj,
+  features = fig2k_epiblast_genes,
+  out_pdf = file.path(args$outdir, 'Fig2k_epiblast_marker_dotplot.pdf'),
+  out_csv = file.path(args$outdir, 'Fig2k_epiblast_marker_dotplot_source_data.csv'),
+  colors = c('steelblue', 'white', 'darkred'),
+  limits = c(-2.5, 2.5),
+  width = 8,
+  height = 4.5
+)
+
+saveRDS(combined2, file.path(args$outdir, 'Fig2jk_integrated_annotated_seurat.rds'))
+message('Done. Fig. 2j,k outputs saved to ', args$outdir)
