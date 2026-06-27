@@ -91,7 +91,7 @@ saveRDS(obj, file.path(args$outdir, 'Fig1n_object_with_module_scores.rds'))
 # -------------------------------------------------------------------------
 # 3. Define softmax transformation and regular tetrahedron projection
 # -------------------------------------------------------------------------
-softmax_scores <- function(score_matrix, scale = 2) {
+softmax_scores <- function(score_matrix, scale = 3) {
   M <- exp(as.matrix(score_matrix) * scale)
   M <- sweep(M, 1, rowSums(M), '/')
   colnames(M) <- c('Pluri', 'PrE', 'TE', 'TwoC')
