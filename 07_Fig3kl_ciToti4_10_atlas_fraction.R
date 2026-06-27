@@ -7,10 +7,10 @@ source('R/celltype_annotations.R')
 require_packages(c('Seurat', 'dplyr', 'ggplot2', 'patchwork', 'harmony'))
 
 args <- parse_cli_args(list(
-  ciToti4 = 'data/ciToti4_subset.rds',
-  ciToti7 = 'data/ciToti7_subset.rds',
-  ciToti8 = 'data/ciToti8_subset.rds',
-  ciToti10 = 'data/ciToti10_subset.rds',
+  ciToti4 = 'data/ciToti4.rds',
+  ciToti7 = 'data/ciToti7.rds',
+  ciToti8 = 'data/ciToti8.rds',
+  ciToti10 = 'data/ciToti10.rds',
   outdir = 'results/Fig3kl',
   dims = '1:20',
   resolution = '0.5',
